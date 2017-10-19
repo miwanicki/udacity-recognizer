@@ -6,6 +6,7 @@ import numpy as np
 from hmmlearn.hmm import GaussianHMM
 from sklearn.model_selection import KFold
 from asl_utils import combine_sequences
+import copy
 
 
 class ModelSelector(object):
@@ -75,9 +76,28 @@ class SelectorBIC(ModelSelector):
         :return: GaussianHMM object
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        best_score = float("Inf")
+        best_model = self.base_model(self.min_n_components)
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        try:
+            for n in range(self.min_n_components, self.max_n_components + 1):
+                #print(n)
+                try:
+                    model = self.base_model(n)
+                    logL = model.score(self.X, self.lengths)
+                    logN = np.log(sum(self.lengths))
+
+                    p = np.power(n,2) + 2 * model.n_features * n - 1
+                    temp_score = -2.0 * logL + p * logN
+
+                    if temp_score < best_score:
+                        best_model, best_score = model, temp_score
+                except:
+                    pass
+        except:
+            pass
+
+        return best_model
 
 
 class SelectorDIC(ModelSelector):
@@ -91,9 +111,31 @@ class SelectorDIC(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        best_score = float("-Inf")
+        best_model = self.base_model(self.min_n_components)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        try:
+            for n in range(self.min_n_components, self.max_n_components + 1):
+                #print(n)
+                try:
+                    model = self.base_model(n)
+
+                    scores = []
+
+                    for word, (X, lengths) in self.hwords.items():
+                        if word != self.this_word:
+                            scores.append(model.score(X,lengths))
+
+                    temp_score = model.score(self.X, self.lengths) - np.mean(scores)
+
+                    if temp_score > best_score:
+                        best_model, best_score = model, temp_score
+                except:
+                    pass
+        except:
+            pass
+
+        return best_model
 
 
 class SelectorCV(ModelSelector):
@@ -103,6 +145,35 @@ class SelectorCV(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        best_score = float("-Inf")
+        best_model = self.base_model(self.min_n_components)
+        split_method = KFold(n_splits=max(2, len(self.sequences)))
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        try:
+            for n in range(self.min_n_components, self.max_n_components + 1):
+                #print(n)
+                try:
+                    self.X, self.lengths = self.hwords[self.this_word]
+                    model_to_pass = self.base_model(n)
+
+                    scores = []
+
+                    for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                        self.X, self.lengths = combine_sequences(cv_train_idx, self.sequences)
+
+                        model = self.base_model(n)
+
+                        X_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
+
+                        scores.append(model.score(X_test, lengths_test))
+
+                    temp_score = np.mean(scores)
+
+                    if temp_score > best_score:
+                        best_model, best_score = model_to_pass, temp_score
+                except:
+                    pass
+        except:
+            pass
+
+        return best_model
